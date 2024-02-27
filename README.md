@@ -45,7 +45,7 @@ This vignette will start by covering some very simple outlier analyses:
 
 Next, we will conduct some more advanced outlier analyses:
 <ul>
-<li><a href="https://bcm-uga.github.io/pcadapt/articles/pcadapt.html"><b>Bayescan</b></a>looks for differences in allele frequencies between populations to search for outliers.</li>
+<li><a href="https://bcm-uga.github.io/pcadapt/articles/pcadapt.html"><b>Bayescan</b></a> looks for differences in allele frequencies between populations to search for outliers.</li>
 <li><a href="GBIF"><b>Baypass</b></a> elaborates on the bayenv model (another popular association analysis program) and allows you to conduct many different types of genetic outlier and genetic association tests.</li>
 </ul>
 
@@ -131,7 +131,7 @@ vcftools --vcf $VCF --plink --out starling_3populations.plink
 plink --file starling_3populations.plink --make-bed --noweb --out starling_3populations
 ```
 
-
+Note that vcf files don't contain population-level structure coded into them, so upon conversion to plink, we will need to manually add this back for population structure-based analyses!
 
 ## PCAdapt
 
@@ -240,6 +240,9 @@ hist(starlings_pcadapt_pca$pvalues, xlab = "p-values", main = NULL, breaks = 50,
 dev.off()
 ```
 
+Interpreting the QQ plot:
+Anything flat = small aspects of variation
+Anything S-shaped means there is a more clear distinction between what is an outlier vs. not an outlier. Outliers within the genome at least - not across the population!
 <img src="/images/pcadapt_pvals.PNG" alt="pvals" width="450"/>
 
 ```
