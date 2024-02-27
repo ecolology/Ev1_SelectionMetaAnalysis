@@ -543,6 +543,9 @@ PGDSpider2-cli -inputfile $VCF -inputformat VCF -outputfile starling_3population
 #run the step 2 of the conversion
 PGDSpider2-cli -inputfile starling_3populations.pgd -inputformat PGD -outputfile starling_3populations.bs -outputformat GESTE_BAYE_SCAN
 ```
+
+** Note: cutting and pasting adds white space to end of file! Delete or the file will not run!!
+
 Let us have a quick look at what the input file looks like.
 
 ```
@@ -567,9 +570,12 @@ So for each population, we have a note of how many REF and ALT alleles we have a
 
 Now let us set Bayescan to run. Currently, everything is set to default. Read the manual to understand what the arguments/flags mean and how to refine them if needed.
 
+
 ```
 #load bayescan
 module load quay.io/biocontainers/bayescan/2.0.1--h9f5acd7_4
+
+bayescan2 --help # see manual
 
 #run bayescan. 
 bayescan2 ./starling_3populations.bs -od ./ -threads 2 -n 5000 -thin 10 -nbp 20 -pilot 5000 -burn 50000 -pr_odds 10
@@ -578,6 +584,7 @@ bayescan2 ./starling_3populations.bs -od ./ -threads 2 -n 5000 -thin 10 -nbp 20 
 Ordinarily we would run this as a slurm script for about 1 hr, but for today's workshop we have prebaked files located in ``/home/ubuntu/outlier_analysis/backup_files/``. Let's copy them over into our Bayescan analysis directory.
 
 ```
+cd $DIR/analysis/bayescan
 cp $DIR/workshop_material/Ev1_SelectionMetaAnalysis/workshop_files/backup_files/starling_3population_AccRte.txt .
 cp $DIR/workshop_material/Ev1_SelectionMetaAnalysis/workshop_files/backup_files/starling_3population_Verif.txt .
 cp $DIR/workshop_material/Ev1_SelectionMetaAnalysis/workshop_files/backup_files/starling_3population_fst.txt .
@@ -674,11 +681,14 @@ dev.off()
 
 q()
 ```
+The bottom left of the plot has a small nub to the downwards right, which represents balancing selection in the population (not really present in this population of invasives) - but it is harder to detect balancing selection relative to divergent selection in reduced representation sequencing data, rather than full genome sequencing data.
+Top right (red) indicates divergent selection.
+
 <img src="/images/bayescan_outliers.png" alt="Windowed Fst" width="300"/>
 
 ## BayPass
 
-The BayPass manual can be found [here](http://www1.montpellier.inra.fr/CBGP/software/baypass/files/BayPass_manual_2.31.pdf).
+The BayPass manual can be found [here](https://forgemia.inra.fr/mathieu.gautier/baypass_public/-/blob/master/manual/BayPass_manual.pdf?ref_type=heads).
 
 Citation: Gautier, M. (2015). Genome-wide scan for adaptive divergence and association with population-specific covariates. Genetics, 201(4), 1555-1579. https://doi.org/10.1534/genetics.115.181453
 
@@ -718,7 +728,7 @@ module load quay.io/biocontainers/plink/1.90b6.21--hec16e2b_2/module
 plink --file starling_3populations.plink --allow-extra-chr --freq counts --family --out starling_3populations
 ```
 
-Manipulate file so it has BayPass format, numbers set for PLINK output file, and population number for column count.
+Manipulate file so it has BayPass format, numbers set for PLINK output file, and population number for column count. For this, we use the minor allele count {$7} and the major allele count {$9=$8-$7}. `tr` replaces all new lines as spaces, making one giant line; `sed` goes through and finds every 6 spaces and replaces it with a new line.
 
 ```
 tail -n +2 starling_3populations.frq.strat | awk '{ $9 = $8 - $7 } 1' | awk '{print $7,$9}' | tr "\n" " " | sed 's/ /\n/6; P; D' > starling_3populations_baypass.txt
@@ -736,6 +746,8 @@ cd $DIR/analysis/baypass
 g_baypass -npop 3 -gfile ./starling_3populations_baypass.txt -outprefix starling_3populations_baypass -nthreads 4
 ```
 
+
+## Simulating SNP data with the same neutral parameters as our dataset
 Run in R to make the anapod data. First, let us quickly download the utilities we need.
 
 ```
@@ -753,13 +765,23 @@ library("ape")
 
 library("mvtnorm")
 
+# Get output omega values
 omega <- as.matrix(read.table("starling_3populations_baypass_mat_omega.out"))
 
+# Get beta coefficient parameters for the population
 pi.beta.coef <- read.table("starling_3populations_baypass_summary_beta_params.out", header = TRUE)
 
+# Pull data (major and minor allele freqs?)
 bta14.data <- geno2YN("starling_3populations_baypass.txt")
 
-simu.bta <- simulate.baypass(omega.mat = omega, nsnp = 5000, sample.size = bta14.data$NN, beta.pi = pi.beta.coef$Mean, pi.maf = 0, suffix = "btapods")
+# Simulate SNPs based on our dataset to re-create a similar population to ours!
+simu.bta <- simulate.baypass(omega.mat = omega, 
+	nsnp = 5000, # number of SNPs - increase if using whole-genome SNP data!
+	sample.size = bta14.data$NN, # population sample sizes 
+	beta.pi = pi.beta.coef$Mean, # mean value of beta parameters to use
+	pi.maf = 0, 
+	suffix = "btapods",
+	coverage=NA) # can also add coverage here
 
 q()
 ```
@@ -782,13 +804,14 @@ library("ape")
 
 library("corrplot")
 
+# Again, we compute the 1% threshold for the simulated neutral data
 pod.xtx <- read.table("G.btapods_summary_pi_xtx.out", header = T)
 ```
 
 We compute the 1% threshold for the simulated neutral data.
 
 ```
-pod.thresh <- quantile(pod.xtx$M_XtX ,probs = 0.99)
+pod.thresh <- quantile(pod.xtx$M_XtX, probs = 0.99)
 pod.thresh
 
 q()
@@ -817,6 +840,9 @@ wc -l baypass_outlierSNPIDs.txt
 > &emsp;
 > 38
 
+
+## Regressing SNPs by phenotype (wingspan)
+
 Now let's find SNPs that are statistically associated with wingspan. To do this, we have to go back to the metadata and compute the average wingspan of each of our populations and place them in a file.
 
 ```
@@ -825,6 +851,7 @@ setwd("/home/ubuntu/outlier_analysis/analysis/baypass")
 metadata <- read.table("/home/ubuntu/outlier_analysis/data/starling_3populations_metadata.txt", sep="\t", header=FALSE)
 str(metadata)
 pop_metadata <- aggregate(V3 ~ V2, data = metadata, mean)
+# Same as running: require(dplyr); metadata %>% group_by(V2) %>% summarise(mean = mean(V3))
 
 # Check mean wingspan
 pop_metadata[, 2]
@@ -843,9 +870,12 @@ Now we can run the third and final BayPass job, which will let us know which SNP
 ```
 g_baypass -npop 3 -gfile starling_3populations_baypass.txt -efile pop_mean_wingspan.txt -scalecov -auxmodel -nthreads 4 -omegafile starling_3populations_baypass_mat_omega.out -outprefix starling_3populations_baypass_wing
 ```
+Note that we are scaling the variance-covariance matrix, since the phenotypes are not on the same scale necessarily!
+Note as well: The omega file is now provided - providing some information about population structure to initialise the simulation. To see the signals of covariate selection within SNPs, need to use the omega file from the first Baypass run!
 
+We are interested in the auxiliary analysis, which uses the covariate's association with SNPs.
 
-Next we plot the outliers. We are choosing a BF threshold of 20 dB, which indicates "Strong evidence for alternative hypothesis."
+Next we plot the outliers. We are choosing a bayesian factor (BF) threshold of 20 dB, which indicates "Strong evidence for alternative hypothesis."
 
 ```
 R
@@ -859,38 +889,44 @@ covaux.snp.xtx.mass <- read.table("starling_3populations_baypass_summary_pi_xtx.
 
 pdf("Baypass_plots.pdf")
 layout(matrix(1:3,3,1))
-plot(covaux.snp.res.mass$BF.dB.,xlab="Mass",ylab="BFmc (in dB)")
-abline(h=20, col="red")
+plot(covaux.snp.res.mass$BF.dB.,xlab="Mass",ylab="BFmc (in dB)") # bayesian version of manhattan plot - whether the SNP is behaving similar to the neutral landscape, or if it is likely under selection!
+abline(h=20, col="red") # BF threshold of 20 dB = 'strong evidence for alternative hypothesis'
 plot(covaux.snp.res.mass$M_Beta,xlab="SNP",ylab=expression(beta~"coefficient"))
 plot(covaux.snp.xtx.mass$M_XtX, xlab="SNP",ylab="XtX corrected for SMS")
 dev.off()
 
 q()
 ```
-
+Note that higher bayesian factors (BFs) indicate a higher likelihood of something important going on
 <img src="/images/Baypass.PNG" alt="Baypass output" width="500"/>
 
 Finally, let's generate the list of phenotype-associated SNP IDs. 
 
 ```
-cat starling_3populations_baypass_wing_summary_betai.out | awk '$6>20' > starling_3populations_baypass_wing_BF20.txt
-starling_3populations_baypass_wing_BF20.txt
+head starling_3populations_baypass_wing_summary_betai.out # larger BF values are more associated with wingspan!
 
-wc -l starling_3populations_baypass_wing_BF20.txt
+# filter the 6th column values larger than 20
+cat starling_3populations_baypass_wing_summary_betai.out | awk '$6>20' > starling_3populations_baypass_wing_BF20.txt
+
+wc -l starling_3populations_baypass_wing_BF20.txt # 42 outliers again detected, using variation from wingspan
 ```
 
 > :heavy_check_mark: **Output** <br>
 > &emsp;
 > 48
 
-Filter the data sets for SNPS above BFmc threshold. These are out outlier SNPs that are associated with wingspan. 
+### Are the SNP IDs similar where wingspan is higher vs. lower?
+
+Filter the data sets for SNPS above BFmc threshold. These are our outlier SNPs that are associated with wingspan. 
 
 ```
+# Take MRK column from first file in
 awk 'FNR==NR{a[$2];next} (($4) in a)' starling_3populations_baypass_wing_BF20.txt ../starling_3populations_SNPs.txt | cut -f3 > baypass_wingspan_outlierSNPIDs.txt
 
+# comm -12 is like inner_join in R
 comm -12 <(sort baypass_wingspan_outlierSNPIDs.txt) <(sort baypass_outlierSNPIDs.txt) > double_outliers.txt
 
-wc -l double_outliers.txt
+wc -l double_outliers.txt # get double outliers
 ```
 
 > :heavy_check_mark: **Output** <br>
@@ -948,7 +984,37 @@ q()
 
 Let's have a discussion about the overlap between these five outlier groups. <p>
 
+PCA adapt doesn't have any overlap with others, as we are looking for outliers within the total population, not across the populations
+
+Bayescan is strict - also not as many outliers
+
 And if you want to get really fancy, you may even want to plot your variants at their location around your genome in a <a href="https://github.com/katarinastuart/Sv3_StarlingGenome">circle plot</a>!
+
+## Pitfalls and caveats
+<br></br>
+**Don't overfilter! If looking for signals of selection, don't crop off high LD sites!**
+<br>
+**Reduced representation sequencing (RRS) vs. whole genome sequencing (WGS)**
+Not going to get clean and clear Manhattan plots with RRS! Still can get signals, but won't be as clear
+Linkage in WGS will show SNPs nearby selected SNPs that produce clear and obvious peaks<br>
+
+**Individual vs. population-based analyses**
+VCFtools based on population
+PCAdapt based on individuals
+
+Best method: subset out 200 subsets of the SNPs, estimate XtX thresholds, combine all 200 runs to produce the clear peaks.
+
+There are methods for combining outliers from multiple outlier analyses!
+
+Downstream analysis:
+Questions around:
+Balancing selection using betascan (requires WGS)
+GO (Genome enrichment analysis) using Gorilla (requires reference annotation or variant anotation)
+Protein alteration using VEP (requires variant annotation)
+Alphafold for coded protein folding differences as evidence of true selection in 'genomics-land'?
+Location using bedtools (requires rough chromosome-level assembly)
+Look at popgen on outlier dataset only to see if Fst, etc. is the same or different in what way!
+
 
 ## Workshop End discussion
   
